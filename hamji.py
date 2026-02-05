@@ -33,7 +33,7 @@ if uploaded_file:
 
     # [1] 로드 및 AI 노이즈 제거 (강도 하향 조정으로 음질 보존)
     y, sr = librosa.load("input.m4a", sr=None)
-    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.7) # 0.85 -> 0.7
+    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.85) # 0.85 -> 0.7
 
     # [2] 동굴 소리 제거
     y_no_box = anti_boxness_filter(y_denoised, sr)
@@ -43,10 +43,10 @@ if uploaded_file:
 
     # [4] 하이톤 '치지지' 노이즈 제거 (De-hissing)
     # 6000Hz 이상의 날카로운 성분을 부드럽게 만듭니다.
-    y_smooth = de_hiss_filter(y_pitched, sr, cutoff=6000)
+    y_smooth = de_hiss_filter(y_pitched, sr, cutoff=5300)
     
     # [5] 마지막 다듬기 (조곤조곤한 속도)
-    y_final = librosa.effects.time_stretch(y_smooth, rate=1.0) # 속도를 1.0으로 더 자연스럽게
+    y_final = librosa.effects.time_stretch(y_smooth, rate=1.2) # 속도를 1.0으로 더 자연스럽게
     
     # 볼륨 최적화 (0.7로 낮춰서 피크 왜곡 방지)
     max_val = np.max(np.abs(y_final))
