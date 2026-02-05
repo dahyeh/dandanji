@@ -2,23 +2,25 @@ import streamlit as st
 import librosa
 import soundfile as sf
 import numpy as np
+import noisereduce as nr
 from scipy.signal import butter, lfilter
 
-# --- 엔지니어의 비밀 도구: 고음 깎기(LPF) 함수 ---
-def low_pass_filter(data, cutoff, sr, order=5):
+# 1. 고음역대를 부드럽게 만드는 필터
+def low_pass_filter(data, cutoff, sr, order=4):
     nyq = 0.5 * sr
     normal_cutoff = cutoff / nyq
     b, a = butter(order, normal_cutoff, btype='low', analog=False)
     return lfilter(b, a, data)
 
-st.set_page_config(page_title="프리미엄 보이스 스튜디오", page_icon="✨")
-st.title("✨ 보들보들 상냥한 보이스 필터")
+# 2. 따뜻한 느낌을 주는 저음역대 강조 필터
+def warm_boost_filter(data, sr):
+    # 200Hz~500Hz 부근을 살짝 살려주면 목소리가 상냥하고 따뜻해집니다.
+    b, a = butter(2, [200/(0.5*sr), 500/(0.5*sr)], btype='band')
+    warm_part = lfilter(b, a, data)
+    return data + (warm_part * 0.5)
 
-# 비밀번호 보안
-password = st.sidebar.text_input("접속 비밀번호", type="password")
-if password != "1234": # 본인이 설정한 비밀번호로 바꾸세요!
-    st.warning("비밀번호를 입력해 주세요.")
-    st.stop()
+st.set_page_config(page_title="보들보들 보이스 스튜디오 v3", page_icon="☁️")
+st.title("☁️ 보들보들 상냥한 보이스 (최종 진화형)")
 
 uploaded_file = st.file_uploader("녹음 파일을 올려주세요", type=['m4a', 'wav', 'mp3'])
 
@@ -26,34 +28,40 @@ if uploaded_file:
     with open("input.m4a", "wb") as f:
         f.write(uploaded_file.getbuffer())
     
-    st.info("상냥한 목소리로 정밀 튜닝 중입니다... 🎙️")
+    st.info("AI 노이즈 제거 및 보이스 클리닝 진행 중...")
 
-    # 1. 파일 불러오기
+    # [처리 1] 오디오 로드
     y, sr = librosa.load("input.m4a", sr=None)
 
-    # 2. 목소리가 없는 부분의 잡음 제거 (Gate)
-    yt, _ = librosa.effects.trim(y, top_db=25) 
+    # [처리 2] 강력한 노이즈 제거 (AI 방식)
+    # 주변의 '쉬-' 하는 소리나 화이트 노이즈를 마법처럼 지워줍니다.
+    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.8)
 
-    # 3. 피치 조절 (너무 높지 않게 1.2로 설정 - 성인 여성의 맑은 톤)
-    y_pitched = librosa.effects.pitch_shift(yt, sr=sr, n_steps=1.2)
+    # [처리 3] 피치 조절 (더 미세하게!)
+    # 상냥한 느낌을 위해 0.8 ~ 1.2 사이를 추천합니다. (이번엔 1.0으로 더 자연스럽게!)
+    y_pitched = librosa.effects.pitch_shift(y_denoised, sr=sr, n_steps=0.8)
 
-    # 4. 보들보들하게 만들기 (4000Hz 이상의 날카로운 소리 제거)
-    y_smooth = low_pass_filter(y_pitched, cutoff=4000, sr=sr)
+    # [처리 4] 보들보들 필터링 (고음역대 컷)
+    # 3500Hz로 더 낮춰서 아주 포근한 소리를 만듭니다.
+    y_soft = low_pass_filter(y_pitched, cutoff=3500, sr=sr)
 
-    # 5. 조곤조곤하게 속도 조절 (0.97배로 살짝 여유 있게)
-    y_final = librosa.effects.time_stretch(y_smooth, rate=0.97)
+    # [처리 5] 따뜻함 추가 (저음 강조)
+    y_warm = warm_boost_filter(y_soft, sr)
 
-    # 6. 소리가 깨지지 않게 볼륨 조절 (Normalization)
+    # [처리 6] 속도 및 볼륨 최적화
+    y_final = librosa.effects.time_stretch(y_warm, rate=0.96) # 조금 더 천천히
+    
+    # 볼륨 정규화 (찢어지는 소리 방지)
     max_val = np.max(np.abs(y_final))
     if max_val > 0:
-        y_final = y_final * (0.7 / max_val)
+        y_final = y_final / max_val * 0.6
 
     # 결과 저장
-    output_path = "pro_soft_voice.wav"
+    output_path = "final_soft_voice.wav"
     sf.write(output_path, y_final, sr)
 
-    st.success("완료되었습니다! 훨씬 듣기 편해졌을 거예요.")
+    st.success("이제 훨씬 깨끗하고 부드러운 목소리가 되었을 거예요!")
     st.audio(output_path)
     
     with open(output_path, "rb") as f:
-        st.download_button("상냥한 목소리 저장하기", f, file_name="soft_voice.wav")
+        st.download_button("상냥한 목소리 다운로드", f, file_name="final_voice.wav")
