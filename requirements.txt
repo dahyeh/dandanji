@@ -2,3 +2,4 @@ streamlit
 librosa
 soundfile
 scipy
+noisereduce
