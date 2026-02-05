@@ -3,24 +3,27 @@ import librosa
 import soundfile as sf
 import numpy as np
 import noisereduce as nr
-from scipy.signal import butter, lfilter
+from scipy.signal import butter, lfilter, iirnotch
 
-# 1. 고음역대를 부드럽게 만드는 필터
-def low_pass_filter(data, cutoff, sr, order=4):
-    nyq = 0.5 * sr
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+# --- [엔지니어링 도구 1] 동굴 소리(웅웅거림) 제거 필터 ---
+def anti_boxness_filter(data, sr):
+    # 400Hz 부근의 '웅웅'거리는 주파수를 찾아 정밀하게 깎아냅니다.
+    f0 = 400.0  # 타겟 주파수
+    Q = 1.0     # 폭 (숫자가 낮을수록 부드럽게 깎임)
+    b, a = iirnotch(f0, Q, sr)
     return lfilter(b, a, data)
 
-# 2. 따뜻한 느낌을 주는 저음역대 강조 필터
-def warm_boost_filter(data, sr):
-    # 200Hz~500Hz 부근을 살짝 살려주면 목소리가 상냥하고 따뜻해집니다.
-    b, a = butter(2, [200/(0.5*sr), 500/(0.5*sr)], btype='band')
-    warm_part = lfilter(b, a, data)
-    return data + (warm_part * 0.5)
+# --- [엔지니어링 도구 2] 고음역대 보정 (먹먹함 방지) ---
+def high_shelf_filter(data, sr, gain=3):
+    # 너무 먹먹해지지 않게 고음역대를 살짝만 살려줍니다.
+    nyq = 0.5 * sr
+    cutoff = 3000 / nyq
+    b, a = butter(2, cutoff, btype='high')
+    high_part = lfilter(b, a, data)
+    return data + (high_part * 0.2)
 
-st.set_page_config(page_title="보들보들 보이스 스튜디오 v3", page_icon="☁️")
-st.title("☁️ 보들보들 상냥한 보이스 (최종 진화형)")
+st.set_page_config(page_title="클로즈업 보이스 스튜디오", page_icon="🎙️")
+st.title("🎙️ 동굴 소리 없는 '밀착형' 상냥 보이스")
 
 uploaded_file = st.file_uploader("녹음 파일을 올려주세요", type=['m4a', 'wav', 'mp3'])
 
@@ -28,40 +31,35 @@ if uploaded_file:
     with open("input.m4a", "wb") as f:
         f.write(uploaded_file.getbuffer())
     
-    st.info("AI 노이즈 제거 및 보이스 클리닝 진행 중...")
+    st.info("동굴 울림을 제거하고 목소리를 앞으로 당기는 중...")
 
-    # [처리 1] 오디오 로드
+    # [1] 로드 및 AI 노이즈 제거
     y, sr = librosa.load("input.m4a", sr=None)
+    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.7)
 
-    # [처리 2] 강력한 노이즈 제거 (AI 방식)
-    # 주변의 '쉬-' 하는 소리나 화이트 노이즈를 마법처럼 지워줍니다.
-    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.8)
+    # [2] 동굴 소리(웅웅거림) 정밀 제거 (핵심!)
+    y_no_box = anti_boxness_filter(y_denoised, sr)
 
-    # [처리 3] 피치 조절 (더 미세하게!)
-    # 상냥한 느낌을 위해 0.8 ~ 1.2 사이를 추천합니다. (이번엔 1.0으로 더 자연스럽게!)
-    y_pitched = librosa.effects.pitch_shift(y_denoised, sr=sr, n_steps=0.8)
+    # [3] 피치 조절 (가장 자연스러운 0.9단계)
+    y_pitched = librosa.effects.pitch_shift(y_no_box, sr=sr, n_steps=0.9)
 
-    # [처리 4] 보들보들 필터링 (고음역대 컷)
-    # 3500Hz로 더 낮춰서 아주 포근한 소리를 만듭니다.
-    y_soft = low_pass_filter(y_pitched, cutoff=3500, sr=sr)
-
-    # [처리 5] 따뜻함 추가 (저음 강조)
-    y_warm = warm_boost_filter(y_soft, sr)
-
-    # [처리 6] 속도 및 볼륨 최적화
-    y_final = librosa.effects.time_stretch(y_warm, rate=0.96) # 조금 더 천천히
+    # [4] 음색 보정 (고음은 살리고 지저분한 초고음만 컷)
+    y_clear = high_shelf_filter(y_pitched, sr)
     
-    # 볼륨 정규화 (찢어지는 소리 방지)
+    # [5] 마지막 다듬기 (조곤조곤한 속도)
+    y_final = librosa.effects.time_stretch(y_clear, rate=0.98)
+    
+    # 볼륨 최적화 및 리미팅 (소리가 깨지지 않게)
+    y_final = np.clip(y_final, -1.0, 1.0)
     max_val = np.max(np.abs(y_final))
     if max_val > 0:
-        y_final = y_final / max_val * 0.6
+        y_final = y_final / max_val * 0.8
 
-    # 결과 저장
-    output_path = "final_soft_voice.wav"
+    output_path = "final_studio_voice.wav"
     sf.write(output_path, y_final, sr)
 
-    st.success("이제 훨씬 깨끗하고 부드러운 목소리가 되었을 거예요!")
+    st.success("이제 훨씬 선명하고 바로 옆에서 말하는 것 같을 거예요!")
     st.audio(output_path)
     
     with open(output_path, "rb") as f:
-        st.download_button("상냥한 목소리 다운로드", f, file_name="final_voice.wav")
+        st.download_button("최종 결과물 저장", f, file_name="studio_voice.wav")
