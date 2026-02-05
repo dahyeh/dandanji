@@ -9,7 +9,7 @@ from scipy.signal import butter, lfilter, iirnotch
 def anti_boxness_filter(data, sr):
     # 400Hz 부근의 '웅웅'거리는 주파수를 찾아 정밀하게 깎아냅니다.
     f0 = 400.0  # 타겟 주파수
-    Q = 1.0     # 폭 (숫자가 낮을수록 부드럽게 깎임)
+    Q = 0.7     # 폭 (숫자가 낮을수록 부드럽게 깎임)
     b, a = iirnotch(f0, Q, sr)
     return lfilter(b, a, data)
 
@@ -35,7 +35,7 @@ if uploaded_file:
 
     # [1] 로드 및 AI 노이즈 제거
     y, sr = librosa.load("input.m4a", sr=None)
-    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.7)
+    y_denoised = nr.reduce_noise(y=y, sr=sr, prop_decrease=0.85)
 
     # [2] 동굴 소리(웅웅거림) 정밀 제거 (핵심!)
     y_no_box = anti_boxness_filter(y_denoised, sr)
@@ -47,7 +47,7 @@ if uploaded_file:
     y_clear = high_shelf_filter(y_pitched, sr)
     
     # [5] 마지막 다듬기 (조곤조곤한 속도)
-    y_final = librosa.effects.time_stretch(y_clear, rate=0.98)
+    y_final = librosa.effects.time_stretch(y_clear, rate=1.1)
     
     # 볼륨 최적화 및 리미팅 (소리가 깨지지 않게)
     y_final = np.clip(y_final, -1.0, 1.0)
